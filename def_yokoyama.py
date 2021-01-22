@@ -9,8 +9,8 @@ import sporco.metric as sm
 import os
 import cv2
 import glob
-from skimage import measure
-
+from skimage.metrics import structural_similarity as ssim
+# %%
 
 def zero_pad(D, N, d_size):
     N = int(np.sqrt(N))
@@ -376,7 +376,7 @@ goal = []
 # %%
 rhox = 1
 rhod = 1
-lamd = 0.2
+lamd = 0.1
 coef_ite = 40
 dict_ite = 1
 total_ite = 50
@@ -424,16 +424,16 @@ print(image)
 print(np.array(X).shape)
 # %%
 imgr = []
-# imgr.append(sl1 + reconstruct(xf[0], D, N*N, M))
-# imgr.append(sl2 + reconstruct(xf[1], D, N*N, M))
-# imgr.append(sl3 + reconstruct(xf[2], D, N*N, M))
-# imgr.append(sl4 + reconstruct(xf[3], D, N*N, M))
-# imgr.append(sl5 + reconstruct(xf[4], D, N*N, M))
-imgr.append( reconstruct(xf[0], D, N*N, M))
-imgr.append( reconstruct(xf[1], D, N*N, M))
-imgr.append(reconstruct(xf[2], D, N*N, M))
-imgr.append( reconstruct(xf[3], D, N*N, M))
-imgr.append( reconstruct(xf[4], D, N*N, M))
+imgr.append(sl1 + reconstruct(xf[0], D, N*N, M))
+imgr.append(sl2 + reconstruct(xf[1], D, N*N, M))
+imgr.append(sl3 + reconstruct(xf[2], D, N*N, M))
+imgr.append(sl4 + reconstruct(xf[3], D, N*N, M))
+imgr.append(sl5 + reconstruct(xf[4], D, N*N, M))
+# imgr.append( reconstruct(xf[0], D, N*N, M))
+# imgr.append( reconstruct(xf[1], D, N*N, M))
+# imgr.append(reconstruct(xf[2], D, N*N, M))
+# imgr.append( reconstruct(xf[3], D, N*N, M))
+# imgr.append( reconstruct(xf[4], D, N*N, M))
 for g in range (K):
     fig = plot.figure(figsize=(14, 7))
     plot.subplot(1, 2, 1)
@@ -497,30 +497,31 @@ for i in range(2):
 tesS1 = cv2.resize(np.load("test.npy")[0], (N,N))/255
 tesS2 = cv2.resize(np.load("test.npy")[1], (N,N))/255
 tesS = [tesS1.astype(np.float64), tesS2.astype(np.float64)]
-sl1, sh1 = util.tikhonov_filter(tesS[0], fltlmbd, npd)
-sl2, sh2 = util.tikhonov_filter(tesS[1], fltlmbd, npd)
+sl6, sh6 = util.tikhonov_filter(tesS[0], fltlmbd, npd)
+sl7, sh7 = util.tikhonov_filter(tesS[1], fltlmbd, npd)
 print(sh1.shape)
-S1 = sh1.reshape(N*N)
-S2 = sh2.reshape(N*N)
-TESTS = [S1, S2]
+S6 = sh6.reshape(N*N)
+S7 = sh7.reshape(N*N)
+TESTS = [S6, S7]
+
 # %%
 # d_0 = np.random.normal(-1, 1, (M, d_size, d_size))
-X, y, prx, dux, hize = coefficient_learning(d, tesX, tesy, TESTS, N*N, M, rhox, 0.2, d_size, 300)
+X_tes, y_tes, prx_tes, dux_tes, hize_tes = coefficient_learning(d, tesX, tesy, TESTS, N*N, M, 1, 0.5, d_size, 100)
 # %%
-xf = X_to_xf(X, N*N, M)
-imgr = []
-imgr.append(sl1+reconstruct(xf[0], D, N*N, M))
-imgr.append(sl2+reconstruct(xf[1], D, N*N, M))
+xf_tes = X_to_xf(X_tes, N*N, M)
+img_tes = []
+img_tes.append(sl6+reconstruct(xf_tes[0], D, N*N, M))
+img_tes.append(sl7+reconstruct(xf_tes[1], D, N*N, M))
 # %%
 print(sh1)
 print(reconstruct(xf[0], D, N*N, M))
 # %%
-for g in range (len(imgr)):
+for g in range(len(img_tes)):
     fig = plot.figure(figsize=(14, 7))
     plot.subplot(1, 2, 1)
     plot.imview(tesS[g], title='Original', fig=fig)
     plot.subplot(1, 2, 2)
-    plot.imview(imgr[g], title='Reconstructed['+str(i+1)+"]"+str(sm.psnr(tesS[g], imgr[g])), fig=fig)
+    plot.imview(img_tes[g], title='Reconstructed['+str(i+1)+"]"+str(sm.psnr(tesS[g], img_tes[g])), fig=fig)
 # %%
 x_coef = np.arange(200)
 # ax1 = fig.add_subplot(1, 2, 1)
@@ -541,4 +542,8 @@ ax2 = fig.add_subplot(1, 2, 2)
 # ax2.plot(x_coef, goal)
 plt.title("x"+str(coef_ite)+"d"+str(dict_ite)+"lambd"+str(lamd))
 plt.legend()
+# %%
+d = d.transpose(1, 2, 0)
+plot.imview(util.tiledict(d), fgsz=(7, 7))
+d = d.transpose(2, 0, 1)
 # %%
