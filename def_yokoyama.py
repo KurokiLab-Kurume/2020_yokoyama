@@ -344,11 +344,16 @@ S2 = sh2.reshape(N*N)
 S3 = sh3.reshape(N*N)
 S4 = sh4.reshape(N*N)
 S5 = sh5.reshape(N*N)
+# S1 = s1.reshape(N*N)
+# S2 = s2.reshape(N*N)
+# S3 = s3.reshape(N*N)
+# S4 = s4.reshape(N*N)
+# S5 = s5.reshape(N*N)
 S = [S1, S2, S3, S4, S5]
 # S = [S1]
 print(S1.shape)
 # 辞書枚数
-M = 20
+M = 32
 d_size = 10
 # proxのstep
 # D = util.convdicts()['G:12x12x36']
@@ -376,10 +381,10 @@ goal = []
 # %%
 rhox = 1
 rhod = 1
-lamd = 0.1
-coef_ite = 40
+lamd = 0.01
+coef_ite = 1
 dict_ite = 1
-total_ite = 50
+total_ite = 100
 # %%
 for i in range(total_ite):
     roopcount = roopcount + 1
@@ -404,6 +409,7 @@ for i in range(total_ite):
     image = reconstruct(xf[0], D, N*N, M)
     print("iterate number: ", roopcount)
     imgr = sl1 + image
+    # imgr = image
     print("Reconstruction PSNR: %.2fdB\n" % sm.psnr(ori[0], imgr))
     # fig = plot.figure(figsize=(14, 7))
     # plot.subplot(1, 2, 1)
@@ -440,6 +446,7 @@ for g in range (K):
     plot.imview(ori[g], title='Original', fig=fig)
     plot.subplot(1, 2, 2)
     plot.imview(imgr[g], title='Reconstructed['+str(i+1)+"]"+str(sm.psnr(ori[g], imgr[g])), fig=fig)
+    print("ssim", ssim(ori[g], imgr[g]))
     # print(measure.compare_ssim(imgr[g], ori[g]))
 # fig = plot.figure(figsize=(14, 7))
 # plot.subplot(1, 2, 1)
@@ -469,8 +476,9 @@ ax1 = fig.add_subplot(1, 2, 1)
 ax2 = fig.add_subplot(1, 2, 2)
 ax1.plot(x_coef, hizero)
 ax2.plot(x_coef, goal)
-plt.title("x"+str(coef_ite)+"d"+str(dict_ite)+"lambd"+str(lamd))
+plt.title("x"+str(coef_ite)+"d"+str(dict_ite)+"lambd"+str(lamd)+"L0"+str(hizero[-1]))
 plt.legend()
+
 # %%
 plt.plot(x_coef[25:], prx_log[25:], color = "b", label = "X Primal")
 plt.plot(x_dict[25:], prd_log[25:], color = "r", label = "D Primal")
@@ -502,26 +510,111 @@ sl7, sh7 = util.tikhonov_filter(tesS[1], fltlmbd, npd)
 print(sh1.shape)
 S6 = sh6.reshape(N*N)
 S7 = sh7.reshape(N*N)
+# S6 = tesS[0].reshape(N*N)
+# S7 = tesS[1].reshape(N*N)
 TESTS = [S6, S7]
 
 # %%
 # d_0 = np.random.normal(-1, 1, (M, d_size, d_size))
-X_tes, y_tes, prx_tes, dux_tes, hize_tes = coefficient_learning(d, tesX, tesy, TESTS, N*N, M, 1, 0.5, d_size, 100)
+X_tes, y_tes, prx_tes, dux_tes, hize_tes = coefficient_learning(d, tesX, tesy, TESTS, N*N, M, 1, 0.5, d_size, 220)
 # %%
 xf_tes = X_to_xf(X_tes, N*N, M)
 img_tes = []
 img_tes.append(sl6+reconstruct(xf_tes[0], D, N*N, M))
 img_tes.append(sl7+reconstruct(xf_tes[1], D, N*N, M))
-# %%
-print(sh1)
-print(reconstruct(xf[0], D, N*N, M))
+# img_tes.append(reconstruct(xf_tes[0], D, N*N, M))
+# img_tes.append(reconstruct(xf_tes[1], D, N*N, M))
+
+# print(sh1)
+# print(reconstruct(xf[0], D, N*N, M))
+
+# lambda 0.1 x20 d1 m16 ite50 l0 8941 lambda_tes 0.5 ite _tes 103
+#
+#   ssim 0.9633069801229223 hizero 6343 psnr 32.48
+#   ssim 0.964575618455462 hizero  4748 psnr 30.66
+#
+# lambda 0.1 x20 d1 m24 ite50 l0 7070 lambda_tes 0.5 ite_tes 140
+#
+#   ssim 0.9626232868540868 hizero 5954 psnr32.50
+#   ssim 0.9657699731773517 hizero 4422 psnr30.91
+#
+# lambda 0.1 x20 d1 m32 ite50 l0 5470 lambda_tes 0.5 ite_tes 170
+#
+#   ssim 0.9611599131157266 hizero 5544 psnr32.38
+#   ssim 0.9670827170536861 hizero 4252 psnr31.31
+#
+# lambda 0.02 x1 d1 m16 ite200 l0 4865 lambda_tes 0.5 ite_tes 100
+#   ssim 0.9599233062603879 hizero 5449 psnr32.24
+#   ssim 0.9653802367166419 hizero 4038 psnr30.84
+#
+# lambda 0.02 x1 d1 m16 ite50 l0 5709 lambda_tes 0.5 ite_tes 100
+#   ssim 0.9589008055344321 hizero 5312 psnr32.05
+#   ssim 0.9662954185465689 hizero 4189 psnr30.99
+# lambda 0.02 x1 d1 m24 ite50 l0 867 lambda_tes 0.5 ite_tes 135
+#   ssim 0.9589008055344321 hizero 5578 psnr32.34
+#   ssim 0.9662954185465689 hizero 4751 psnr31.02
+# lambda 0.02 x1 d1 m32 ite50 l0 144 lambda_tes 0.5 ite_tes 165
+#   ssim 0.9580805840507688 hizero 5936 psnr32.45
+#   ssim 0.9597373794940556 hizero 5022 psnr30.96
+# lambda 0.02 x1 d1 m24 ite200 l0 807 lambda_tes 0.5 ite_tes 135
+#   ssim 0.9589008055344321 hizero 5570 psnr32.26
+#   ssim 0.9662954185465689 hizero 4742 psnr31.57
+# lambda 0.01 x1 d1 m32 ite100 l0 8375 lambda_tes 0.5 ite_tes 170
+#   ssim 0.9589008055344321 hizero 5449 psnr32.28
+#   ssim 0.9662954185465689 hizero 4025 psnr30.53
+# lambda 0.015 x1 d1 m32 ite50 l0 1500 lambda_tes 0.5 ite_tes 170
+#   ssim 0.9589008055344321 hizero 5528 psnr32.24
+#   ssim 0.9662954185465689 hizero 4437 psnr31.09
+# lambda 0.01 x1 d1 m32 ite100 l0 6960 lambda_tes 0.5 ite_tes 220
+#   ssim 0.9757409055170905 hizero 6368 psnr34.91
+#   ssim 0.9776642193089905 hizero 4541 psnr33.21
+# 高周波の辞書で元画像のまますると非ゼロ13000 psnr 33
+# lambda 0 の辞書では　13035 psnr 33 11323 psnr 31 ite 30
+# lambda 0.01 x1 d1 200 m24 
+# ssim 0.9607905215709278 hizero 5730 psnr 32
+# ssim 0.96473573253032 hizero 4384 psnr 30
+# random  hizero 6998 psnr 33 hizero 7668 psnr 32
+# rho1 lambda 0.5 ite200
+# ssim 0.9897960148490316 hizero 9370 psnr 38
+# ssim 0.9899393818910095  hizero 7523 psnr 37
+# rho1 lambda 0.5 ite 300
+# sim 0.9951561146043986 hizero 10961 psnr 41
+# ssim 0.9955509738157623 hoizero 9320 psnr 41
 # %%
 for g in range(len(img_tes)):
     fig = plot.figure(figsize=(14, 7))
     plot.subplot(1, 2, 1)
     plot.imview(tesS[g], title='Original', fig=fig)
     plot.subplot(1, 2, 2)
-    plot.imview(img_tes[g], title='Reconstructed['+str(i+1)+"]"+str(sm.psnr(tesS[g], img_tes[g])), fig=fig)
+    plot.imview(img_tes[g], title='Reconstructed[psnr]'+str(sm.psnr(tesS[g], img_tes[g])), fig=fig)
+    print("ssim", ssim(tesS[g], img_tes[g]))
+# %%
+print(X_tes[0].shape)
+X_tes[0] = X_tes[0].reshape(32, 128, 128)
+print(X_tes[0].shape)
+X_tes[0] = X_tes[0].transpose(1, 2, 0)
+print(X_tes[0].shape)
+X_tes[0] = X_tes[0].reshape(128, 128, 1, 1, 32)
+print(X_tes[0].shape)
+# %%
+print(X_tes[1].shape)
+X_tes[1] = X_tes[1].reshape(32, 128, 128)
+print(X_tes[1].shape)
+X_tes[1] = X_tes[1].transpose(1, 2, 0)
+print(X_tes[1].shape)
+X_tes[1] = X_tes[1].reshape(128, 128, 1, 1, 32)
+print(X_tes[1].shape)
+# %%
+fig = plot.figure(figsize=(14, 7))
+plot.subplot(1, 2, 1)
+plot.imview(np.sum(abs(X_tes[0]), axis=4).squeeze(), cmap=plot.cm.Blues,
+            title='Sparse representation', fig=fig)
+plot.subplot(1, 2, 2)
+plot.imview(np.sum(abs(X_tes[1]), axis=4).squeeze(), cmap=plot.cm.Blues,
+            title='Sparse representation', fig=fig)
+fig.show()
+print("X6 L0:",np.sum(abs(X_tes[0])!=0))
+print("X7 L0:",np.sum(abs(X_tes[1])!=0))
 # %%
 x_coef = np.arange(200)
 # ax1 = fig.add_subplot(1, 2, 1)
@@ -544,6 +637,6 @@ plt.title("x"+str(coef_ite)+"d"+str(dict_ite)+"lambd"+str(lamd))
 plt.legend()
 # %%
 d = d.transpose(1, 2, 0)
-plot.imview(util.tiledict(d), fgsz=(7, 7))
+plot.imview(util.tiledict(d),title='L1-L1 DR', fgsz=(7, 7))
 d = d.transpose(2, 0, 1)
 # %%
