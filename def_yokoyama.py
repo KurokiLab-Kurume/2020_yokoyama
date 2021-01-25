@@ -48,11 +48,11 @@ def D_to_d(D, N, d_size):
     return flat
 
 
-def make_IDDt(df, N, M, alpha):
+def make_IDDt(df, N, M, rho):
     DDt = np.zeros(N, dtype=np.complex)
     for i in range(M):
         DDt = df[i*N:(i+1)*N]*df[i*N:(i+1)*N].conjugate()+DDt
-    return 1 + alpha*alpha*DDt
+    return 1 + rho*rho*DDt
 
 
 # def make_IXXt(XF, N, M, alpha):
@@ -64,7 +64,7 @@ def make_IDDt(df, N, M, alpha):
 #         XXt = xxt + XXt
 #     return 1 + alpha*alpha*XXt
 
-
+# Aのリゾルベントの右部分の計算
 def make_migi(IDDt, df, byf, N, M, alpha):
     Dtb = np.zeros(N*M, dtype=np.complex)
     migi_NM = np.zeros(N*M)
@@ -78,6 +78,7 @@ def make_migi(IDDt, df, byf, N, M, alpha):
     return np.concatenate([migi_NM, migi_N], 0)
 
 
+# Aのリゾルベントの左部分の計算
 def make_hidari(IDDt, df, bxf, N, M, alpha):
     DtDb = np.zeros(N*M, dtype=np.complex)
     Db = np.zeros(N, dtype=np.complex)
@@ -103,9 +104,7 @@ def make_hidari(IDDt, df, bxf, N, M, alpha):
 
 
 def make_y(df, x, N, M):
-    # yはh(Dx)=l1(Dx-s)よりy = Dx
-    # print("##### in make_xy #####")
-    # print("x.shape :", x.shape)
+    #  h(Dx)=l1norm.(Dx-s)  y = Dxを初期値とした
     xf = np.zeros(x.shape, dtype=np.complex)
     for i in range(M):
         xf[i*N:(i+1)*N] = np.fft.fft(x[i*N:(i+1)*N])
@@ -123,9 +122,9 @@ def D_to_dd_conj(D, dy, xf, N, d_size):
         a = zero_pad(D[i], N, d_size)
         flat[i*N:(i+1)*N] = np.ravel(a)
     # emptyの方がメモリ抑えられるかも
-    df = np.zeros(N*N*D.shape[0], dtype=np.complex)
-    for i in range(D.shape[0]):
-        df[i*N:(i+1)*N] = np.fft.fft(flat[i*N:(i+1)*N])
+    # df = np.zeros(N*N*D.shape[0], dtype=np.complex)
+    # for i in range(D.shape[0]):
+    #     df[i*N:(i+1)*N] = np.fft.fft(flat[i*N:(i+1)*N])
     # yf = np.zeros(N, dtype=np.complex)
     # for i in range(D.shape[0]):
     #     yf = df[i*N:(i+1)*N]*xf[i*N:(i+1)*N] + yf
@@ -489,18 +488,22 @@ d_size = 10
 # D = util.convdicts()['G:12x12x36']
 # D = D.transpose(2, 0, 1)
 K = len(S)
+# 
 d = np.random.normal(0, 1, (M, d_size, d_size))
 X = []
 y = []
 roopcount = 0
+# 係数初期値
 for i in range(K):
     # x = np.random.normal(0, 1, N*N*M)
     # x = np.zeros(K, N*N*M)
     x = np.zeros(N*N*M)
     X.append(x)
+#  双対係数初期値
 for i in range(K):
     x = np.random.normal(0, 1, N*N)
     y.append(x)
+# 双対辞書初期値
 dcon = np.random.normal(0, 1, N*N)
 prx_log = []
 dux_log = []
@@ -594,12 +597,12 @@ imgr.append(sl2 + reconstruct(xf[1], D, N*N, M))
 imgr.append(sl3 + reconstruct(xf[2], D, N*N, M))
 imgr.append(sl4 + reconstruct(xf[3], D, N*N, M))
 imgr.append(sl5 + reconstruct(xf[4], D, N*N, M))
-# imgr.append( reconstruct(xf[0], D, N*N, M))
-# imgr.append( reconstruct(xf[1], D, N*N, M))
+# imgr.append(reconstruct(xf[0], D, N*N, M))
+# imgr.append(reconstruct(xf[1], D, N*N, M))
 # imgr.append(reconstruct(xf[2], D, N*N, M))
-# imgr.append( reconstruct(xf[3], D, N*N, M))
-# imgr.append( reconstruct(xf[4], D, N*N, M))
-for g in range (K):
+# imgr.append(reconstruct(xf[3], D, N*N, M))
+# imgr.append(reconstruct(xf[4], D, N*N, M))
+for g in range(K):
     fig = plot.figure(figsize=(14, 7))
     plot.subplot(1, 2, 1)
     plot.imview(ori[g], title='Original', fig=fig)
@@ -619,7 +622,7 @@ x_coef = np.arange(roopcount)
 x_dict = np.arange(roopcount)
 # ax1 = fig.add_subplot(1, 2, 1)
 # ax2 = fig.add_subplot(1, 2, 2)
-ax=plt.subplot()
+ax = plt.subplot()
 # ax.set_ylim(0.001, 3)
 # plt.yscale('log')
 plt.plot(x_coef, prx_log, color = "b", label = "X Primal")
@@ -637,7 +640,6 @@ ax1.plot(x_coef, hizero)
 ax2.plot(x_coef, goal)
 plt.title("x"+str(coef_ite)+"d"+str(dict_ite)+"lambd"+str(lamd)+"L0"+str(hizero[-1]))
 plt.legend()
-
 # %%
 plt.plot(x_coef[25:], prx_log[25:], color = "b", label = "X Primal")
 plt.plot(x_dict[25:], prd_log[25:], color = "r", label = "D Primal")
@@ -661,8 +663,8 @@ for i in range(2):
 for i in range(2):
     x = np.random.normal(0, 1, N*N)
     tesy.append(x)
-tesS1 = cv2.resize(np.load("test.npy")[0], (N,N))/255
-tesS2 = cv2.resize(np.load("test.npy")[1], (N,N))/255
+tesS1 = cv2.resize(np.load("test.npy")[0], (N, N))/255
+tesS2 = cv2.resize(np.load("test.npy")[1], (N, N))/255
 tesS = [tesS1.astype(np.float64), tesS2.astype(np.float64)]
 sl6, sh6 = util.tikhonov_filter(tesS[0], fltlmbd, npd)
 sl7, sh7 = util.tikhonov_filter(tesS[1], fltlmbd, npd)
@@ -774,17 +776,17 @@ plot.subplot(1, 2, 2)
 plot.imview(np.sum(abs(X_tes[1]), axis=4).squeeze(), cmap=plot.cm.Blues,
             title='Sparse representation', fig=fig)
 fig.show()
-print("X6 L0:",np.sum(abs(X_tes[0])!=0))
-print("X7 L0:",np.sum(abs(X_tes[1])!=0))
+print("X6 L0:", np.sum(abs(X_tes[0]) != 0))
+print("X7 L0:", np.sum(abs(X_tes[1]) != 0))
 # %%
-x_coef = np.arange(200)
+x_coef = np.arange(len(prx_tes))
 # ax1 = fig.add_subplot(1, 2, 1)
 # ax2 = fig.add_subplot(1, 2, 2)
-ax=plt.subplot()
+ax = plt.subplot()
 # ax.set_ylim(0.001, 3)
 # plt.yscale('log')
-plt.plot(x_coef, prx, color = "b", label = "X Primal")
-plt.plot(x_coef, dux, color = "g", label = "X Dual")
+plt.plot(x_coef, prx_tes, color="b", label="X Primal")
+plt.plot(x_coef, dux_tes, color="g", label="X Dual")
 plt.title("x"+str(coef_ite)+"d"+str(dict_ite)+"lambd"+str(lamd))
 plt.xlabel("Iterations")
 plt.ylabel("Residual")
@@ -798,6 +800,6 @@ plt.title("x"+str(coef_ite)+"d"+str(dict_ite)+"lambd"+str(lamd))
 plt.legend()
 # %%
 d = d.transpose(1, 2, 0)
-plot.imview(util.tiledict(d),title='L1-L1 DR', fgsz=(7, 7))
+plot.imview(util.tiledict(d), title='L1-L1 DR', fgsz=(7, 7))
 d = d.transpose(2, 0, 1)
 # %%
