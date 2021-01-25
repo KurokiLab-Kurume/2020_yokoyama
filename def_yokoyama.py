@@ -141,6 +141,7 @@ def coefficient_learning(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
     xlog = []
     ylog = []
     zero = []
+    IDDt = make_IDDt(df, N, M, rho)
     for j in range(len(x)):
         s_count = s_count+1
         # y = make_y(df, x[j], N, M)
@@ -155,7 +156,6 @@ def coefficient_learning(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
             for i in range(M):
                 bxf[i*N:(i+1)*N] = np.fft.fft(bx[i*N:(i+1)*N])
             byf = np.fft.fft(by)
-            IDDt = make_IDDt(df, N, M, rho)
             hidari = make_hidari(IDDt, df, bxf, N, M, rho)
             migi = make_migi(IDDt, df, byf, N, M, rho)
             xy = np.concatenate([x[j], y[j]], 0)
@@ -183,6 +183,33 @@ def coefficient_learning(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
         print("final coefcount :", count)
         reX.append(h)
     return reX, y, xlog[:ite], ylog[:ite], sum(zero)/len(zero)
+
+
+# def Sherman_f(df, N, M, rho):
+#     # inv.(a+bc) = inv.a - inv.a@b@inv.(I+c@inv.a@b)@c@inv.a
+#     DDt = np.zeros(N, dtype=np.complex)
+#     for i in range(M):
+#         DDt = df[i*N:(i+1)*N]*df[i*N:(i+1)*N].conjugate()+DDt
+#     IDDt = rho + DDt
+#     inv_rho = 1/rho
+#     DtD = 
+#     inv_rho*(1 - DtD) 
+
+# def aa_admm(D, x0, y0, ):
+#     df = D_to_df(D, N, d_size)
+#     x = x0
+#     z = z0
+#     s0 = Dx0 - y0
+#     s = s0
+#     k = 0.
+#     u0 = 0.
+#     v0 = 0.
+#     merit = np.inf
+#     r = np.inf
+#     reset = True
+#     IDDt = make_IDDt(df, N, M, rho)
+#     while True:
+#             x = 
 
 
 def X_to_xf(X, N, M):
@@ -294,7 +321,110 @@ def l1x(X, N, M):
             samu = np.linalg.norm(X[i][j*N:(j+1)*N], ord=1) + samu
     return samu
         
+def coefficient_learning_l2(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
+    df = D_to_df(D, N, d_size)
+    reX = []
+    s_count = 0
+    xlog = []
+    ylog = []
+    zero = []
+    for j in range(len(x)):
+        s_count = s_count+1
+        # y = make_y(df, x[j], N, M)
+        # y = np.random.normal(0, 1, N*N)
+        count = 0
+        while True:
+            pr_x = pr.prox_l1(x[j], lamd/rho)
+            pr_y = y[j] - (pr.prox_l2(y[j] - s[j], 1/rho) + s[j])
+            bx = 2 * pr_x - x[j]
+            by = 2 * pr_y - y[j]
+            bxf = np.zeros(bx.shape, dtype=np.complex)
+            for i in range(M):
+                bxf[i*N:(i+1)*N] = np.fft.fft(bx[i*N:(i+1)*N])
+            byf = np.fft.fft(by)
+            IDDt = make_IDDt(df, N, M, rho)
+            hidari = make_hidari(IDDt, df, bxf, N, M, rho)
+            migi = make_migi(IDDt, df, byf, N, M, rho)
+            xy = np.concatenate([x[j], y[j]], 0)
+            pr_xy = np.concatenate([pr_x, pr_y], 0)
+            xy = xy + migi + hidari - pr_xy
+            # rsdl_n = max(np.linalg.norm(migi[:N*M]+hidari[:N*M]), np.linalg.norm(pr_xy[:N*M]))
+            # rsdl_ny = max(np.linalg.norm(migi[N*M:]+hidari[N*M:]), np.linalg.norm(pr_xy[N*M:]))
+            # move = np.linalg.norm(migi[:N*M]+hidari[:N*M]-pr_xy[:N*M])/rsdl_n
+            x[j] = xy[:N*M]
+            y[j] = xy[N*M:]
+            move = pr.prox_l1(x[j], lamd/rho) - pr_x
+            xlog.append(np.linalg.norm(move))
+            # move = np.linalg.norm(migi[N*M:]+hidari[N*M:]-pr_xy[N*M:])/rsdl_ny
+            move = y[j] - (pr.prox_l1(y[j] - s[j], 1/rho) + s[j]) - pr_y
+            ylog.append(np.linalg.norm(move))
+            h = pr.prox_l1(x[j], lamd/rho)
+            hizero = np.linalg.norm(h.astype(np.float64), ord=0)
+            # a, hizero = check(df, xy, s, N, M, lamd)
+            count = count + 1
+            print("count :", count, "move["+str(s_count)+"]", np.linalg.norm(move), "hizero", hizero)
+            if count >= ite:
+                break
+        zero.append(hizero)
+        # print("final gosa", gosa)
+        print("final coefcount :", count)
+        reX.append(h)
+    return reX, y, xlog[:ite], ylog[:ite], sum(zero)/len(zero)
 
+
+def dictinary_learning_l2(D, dcon, xf, s, N, M, rho, d_size, ite=50):
+    dd_conj = []
+    prlog = []
+    dulog = []
+    count = 0
+    for i in range(len(xf)):
+        dd_conj.append(D_to_dd_conj(D, dcon, xf, N, d_size))
+    while True:
+        pmove = 0
+        dmove = 0
+        for j in range(len(dd_conj)):
+            re_d = resolvent_d_l2(dd_conj[j][:N*M], dd_conj[j][N*M:], s[j], rho, N, M, d_size)
+            b = 2 * re_d - dd_conj[j]
+            bf = np.zeros(b.shape, dtype=np.complex)
+            for k in range(M+1):
+                bf[k*N:(k+1)*N] = np.fft.fft(b[k*N:(k+1)*N])
+            IXXt = make_IDDt(xf[j], N, M, rho)
+            hidari = make_hidari(IXXt, xf[j], bf[:N*M], N, M, rho)
+            migi = make_migi(IXXt, xf[j], bf[N*M:], N, M, rho)
+            dd_conj[j] = dd_conj[j] + migi + hidari - re_d
+            # rsdl_n = max(np.linalg.norm(migi[:N*M]+hidari[:N*M]), np.linalg.norm(re_d[:N*M]))
+            # rsdl_nd = max(np.linalg.norm(migi[N*M:]+hidari[N*M:]), np.linalg.norm(re_d[N*M:]))
+            # pmove = np.linalg.norm(migi[:N*M]+hidari[:N*M]-re_d[:N*M])/rsdl_n + pmove
+            # dmove = np.linalg.norm(migi[N*M:]+hidari[N*M:]-re_d[N*M:])/rsdl_nd + dmove 
+            # move = np.linalg.norm(migi+hidari-re_d)/rsdl_n + move
+            # print("move["+str(j+1)+"] : ", np.linalg.norm(migi+hidari-re_d)/rsdl_n)
+            pmove = np.linalg.norm(dd_conj[j][:N*M]-re_d[:N*M]) + pmove
+            dmove = np.linalg.norm(dd_conj[j][N*M:]-re_d[N*M:]) + dmove
+        prlog.append(pmove/len(dd_conj))
+        dulog.append(dmove/len(dd_conj))
+        d_mean = sum(dd_conj)/len(dd_conj)
+        # d = pr_d(d_mean[:N*M], N, M, d_size)
+        for kk in range(len(dd_conj)):
+            dd_conj[kk][:N*M] = d_mean[:N*M]
+        # gosa, hizero = check(xf, dd_conj, s, N, M, lamd)
+        count = count + 1
+        print("count :", count)
+        if count >= ite:
+            break
+    print("final dic count :", count)
+    d = pr_d(d_mean[:N*M], N, M, d_size)
+    return d, d_mean[N*M:], prlog, dulog
+
+
+def resolvent_d_l2(d, y, s, rho, N, M, d_size):
+    rootN = int(np.sqrt(N))
+    d = d.reshape(M, rootN, rootN)
+    d = d.transpose(1, 2, 0)
+    d_Pcn = cnvrep.Pcn(d.reshape(rootN, rootN, 1, 1, M), (d_size, d_size, M), Nv=(rootN, rootN)).squeeze()
+    d_Pcn = d_Pcn.transpose(2, 0, 1)
+    d = d_Pcn.reshape(N*M)
+    y = y - (pr.prox_l2(y - s, 1/rho) + s)
+    return np.concatenate([d, y], 0)
 # %%
 # #階層移動
 # os.chdir("/Users/yokoyama/Desktop/2020_yokoyama/images")
@@ -353,7 +483,7 @@ S = [S1, S2, S3, S4, S5]
 # S = [S1]
 print(S1.shape)
 # 辞書枚数
-M = 32
+M = 16
 d_size = 10
 # proxのstep
 # D = util.convdicts()['G:12x12x36']
@@ -379,21 +509,50 @@ dud_log = []
 hizero = []
 goal = []
 # %%
+lamd = 0.01
 rhox = 1
 rhod = 1
-lamd = 0.01
 coef_ite = 1
 dict_ite = 1
-total_ite = 100
+total_ite = 50
 # %%
+# L1-L1 DR
+# for i in range(total_ite):
+#     roopcount = roopcount + 1
+#     X, y, prx, dux, hize = coefficient_learning(d, X, y, S, N*N, M, rhox, lamd, d_size, coef_ite)
+#     prx_log.append(prx[coef_ite-1])
+#     dux_log.append(dux[coef_ite-1])
+#     hizero.append(hize)
+#     xf = X_to_xf(X, N*N, M)
+#     d, dcon, prd, dud = dictinary_learning(d, dcon, xf, S, N*N, M, rhod, d_size, dict_ite)
+#     prd_log.append(prd[0])
+#     dud_log.append(dud[0])
+#     d = pr_d(d, N*N, M, d_size)
+#     # X = X.transpose(1, 2, 0)
+#     d = d[:, :d_size, :d_size]
+#     if i == total_ite-1:
+#         d = d.transpose(1, 2, 0)
+#         plot.imview(util.tiledict(d), fgsz=(7, 7))
+#         d = d.transpose(2, 0, 1)
+#     mindx_s = dx_s(d, xf, S, N*N, M, K, d_size) + lamd*l1x(X, N*N, M)
+#     goal.append(mindx_s)
+#     D = D_to_d(d, N*N, d_size)
+#     image = reconstruct(xf[0], D, N*N, M)
+#     print("iterate number: ", roopcount)
+#     imgr = sl1 + image
+#     # imgr = image
+#     print("Reconstruction PSNR: %.2fdB\n" % sm.psnr(ori[0], imgr))
+# ----------------------------------------------------------------
+# L2-L1 DR
+# ----------------------------------------------------------
 for i in range(total_ite):
     roopcount = roopcount + 1
-    X, y, prx, dux, hize = coefficient_learning(d, X, y, S, N*N, M, rhox, lamd, d_size, coef_ite)
+    X, y, prx, dux, hize = coefficient_learning_l2(d, X, y, S, N*N, M, rhox, lamd, d_size, coef_ite)
     prx_log.append(prx[coef_ite-1])
     dux_log.append(dux[coef_ite-1])
     hizero.append(hize)
     xf = X_to_xf(X, N*N, M)
-    d, dcon, prd, dud = dictinary_learning(d, dcon, xf, S, N*N, M, rhod, d_size, dict_ite)
+    d, dcon, prd, dud = dictinary_learning_l2(d, dcon, xf, S, N*N, M, rhod, d_size, dict_ite)
     prd_log.append(prd[0])
     dud_log.append(dud[0])
     d = pr_d(d, N*N, M, d_size)
@@ -551,20 +710,22 @@ img_tes.append(sl7+reconstruct(xf_tes[1], D, N*N, M))
 #   ssim 0.9589008055344321 hizero 5312 psnr32.05
 #   ssim 0.9662954185465689 hizero 4189 psnr30.99
 # lambda 0.02 x1 d1 m24 ite50 l0 867 lambda_tes 0.5 ite_tes 135
-#   ssim 0.9589008055344321 hizero 5578 psnr32.34
-#   ssim 0.9662954185465689 hizero 4751 psnr31.02
+#    hizero 5578 psnr32.34
+#   hizero 4751 psnr31.02
 # lambda 0.02 x1 d1 m32 ite50 l0 144 lambda_tes 0.5 ite_tes 165
-#   ssim 0.9580805840507688 hizero 5936 psnr32.45
-#   ssim 0.9597373794940556 hizero 5022 psnr30.96
+#    hizero 5936 psnr32.45
+#    hizero 5022 psnr30.96
+
+#
 # lambda 0.02 x1 d1 m24 ite200 l0 807 lambda_tes 0.5 ite_tes 135
-#   ssim 0.9589008055344321 hizero 5570 psnr32.26
-#   ssim 0.9662954185465689 hizero 4742 psnr31.57
+#    hizero 5570 psnr32.26
+#    hizero 4742 psnr31.57
 # lambda 0.01 x1 d1 m32 ite100 l0 8375 lambda_tes 0.5 ite_tes 170
-#   ssim 0.9589008055344321 hizero 5449 psnr32.28
-#   ssim 0.9662954185465689 hizero 4025 psnr30.53
+#    hizero 5449 psnr32.28
+#    hizero 4025 psnr30.53
 # lambda 0.015 x1 d1 m32 ite50 l0 1500 lambda_tes 0.5 ite_tes 170
-#   ssim 0.9589008055344321 hizero 5528 psnr32.24
-#   ssim 0.9662954185465689 hizero 4437 psnr31.09
+#    hizero 5528 psnr32.24
+#    hizero 4437 psnr31.09
 # lambda 0.01 x1 d1 m32 ite100 l0 6960 lambda_tes 0.5 ite_tes 220
 #   ssim 0.9757409055170905 hizero 6368 psnr34.91
 #   ssim 0.9776642193089905 hizero 4541 psnr33.21
