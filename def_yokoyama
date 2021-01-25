@@ -1,0 +1,210 @@
+import numpy as np
+from sporco import util
+from sporco import plot
+from sporco.admm import cbpdn
+import sporco.prox as pr
+import sporco.cnvrep as cnvrep
+import sporco.metric as sm
+
+
+def zero_pad(D, N, d_size):
+    N = int(np.sqrt(N))
+    return np.pad(D, ((0, N-d_size), (0, N-d_size)), 'constant')
+
+
+def D_to_df(D, N, d_size):
+    flat = np.zeros(N*D.shape[0])
+    for i in range(D.shape[0]):
+        a = zero_pad(D[i], N, d_size)
+        flat[i*N:(i+1)*N] = np.ravel(a)
+    # emptyの方がメモリ抑えられるかも
+    df = np.zeros(N*D.shape[0], dtype=np.complex)
+    for i in range(D.shape[0]):
+        df[i*N:(i+1)*N] = np.fft.fft(flat[i*N:(i+1)*N])
+    return df
+
+
+def D_to_df_kai(D, N, M, d_size):
+    dd = d_size*d_size
+    d = np.zeros(N*M)
+    df = np.zeros(N*M, dtype=np.complex)
+    for i in range(M):
+        flat = np.ravel(D[i])
+        d[i*N:(i+1)*N] = np.pad(flat, (0, N-dd))
+        df[i*N:(i+1)*N] = np.fft.fft(d[i*N:(i+1)*N])
+    return d, df
+
+
+def D_to_d(D, N, d_size):
+    flat = np.zeros(N*D.shape[0])
+    for i in range(D.shape[0]):
+        a = zero_pad(D[i], N, d_size)
+        flat[i*N:(i+1)*N] = np.ravel(a)
+    return flat
+
+
+def make_IDDt(df, N, M, alpha):
+    DDt = np.zeros(N, dtype=np.complex)
+    for i in range(M):
+        DDt = df[i*N:(i+1)*N]*df[i*N:(i+1)*N].conjugate()+DDt
+    return 1 + alpha*alpha*DDt
+
+
+def make_migi(IDDt, df, byf, N, M, alpha):
+    Dtb = np.zeros(N*M, dtype=np.complex)
+    migi_NM = np.zeros(N*M)
+    migi_N = np.fft.ifft(byf/IDDt)*np.sqrt(N)
+    migi_N = migi_N.astype(np.float64)
+    for i in range(M):
+        Dtb[i*N:(i+1)*N] = df[i*N:(i+1)*N].conjugate()/IDDt*byf*alpha*-1
+    for i in range(M):
+        migi_NM[i*N:(i+1)*N] = np.fft.ifft(Dtb[i*N:(i+1)*N])*np.sqrt(N)
+    migi_NM = migi_NM.astype(np.float64)
+    return np.concatenate([migi_NM, migi_N], 0)
+
+
+def make_hidari(IDDt, df, bxf, N, M, alpha):
+    DtDb = np.zeros(N*M, dtype=np.complex)
+    Db = np.zeros(N, dtype=np.complex)
+    for i in range(M):
+        Db = df[i*N:(i+1)*N]*bxf[i*N:(i+1)*N] + Db
+    hidari_N = alpha*Db/IDDt
+    for i in range(M):
+        DtDb[i*N:(i+1)*N] = df[i*N:(i+1)*N].conjugate()*hidari_N
+    DtDb = bxf - (alpha)*DtDb
+    hidari_N = np.fft.ifft(hidari_N)*np.sqrt(N)
+    hidari_NM = np.zeros(N*M)
+    for i in range(M):
+        hidari_NM[i*N:(i+1)*N] = np.fft.ifft(DtDb[i*N:(i+1)*N])*np.sqrt(N)
+    hidari_N = hidari_N.astype(np.float64)
+    hidari_NM = hidari_NM.astype(np.float64)
+    return np.concatenate([hidari_NM, hidari_N], 0)
+
+
+def resolvent_b(df, xy, s, rho, lamd, N, M):
+    x = pr.prox_l1(xy[:N*M], lamd/rho)
+    y = xy[N*M:] - (pr.prox_l1(xy[N*M:] - s, 1/rho) + s)
+    return np.concatenate([x, y], 0)
+
+
+def make_y(df, x, N):
+    # yはh(Dx)=l1(Dx-s)よりy = Dx
+    print("##### in make_xy #####")
+    print("x.shape :", x.shape)
+    xf = np.zeros(x.shape, dtype=np.complex)
+    for i in range(M):
+        xf[i*N:(i+1)*N] = np.fft.fft(x[i*N:(i+1)*N])/np.sqrt(N)
+    yf = np.zeros(N, dtype=np.complex)
+    for i in range(M):
+        yf = df[i*N:(i+1)*N]*xf[i*N:(i+1)*N] + yf
+    y = np.fft.ifft(yf)*np.sqrt(N)
+    return y
+
+
+def D_to_dd_conj(D, xf, N, d_size):
+    flat = np.zeros(N*D.shape[0])
+    for i in range(D.shape[0]):
+        a = zero_pad(D[i], N, d_size)
+        flat[i*N:(i+1)*N] = np.ravel(a)
+    # emptyの方がメモリ抑えられるかも
+    df = np.zeros(N*N*D.shape[0], dtype=np.complex)
+    for i in range(D.shape[0]):
+        df[i*N:(i+1)*N] = np.fft.fft(flat[i*N:(i+1)*N])/np.sqrt(N)
+    yf = np.zeros(N, dtype=np.complex)
+    for i in range(D.shape[0]):
+        yf = df[i*N:(i+1)*N]*xf[i*N:(i+1)*N] + yf
+    y = np.fft.ifft(yf)*np.sqrt(N)
+    return np.concatenate([flat, y], 0)
+
+
+def coefficient_learning(D, x, s, N, M, rho, lamd, d_size, ite=200):
+    df = D_to_df(D, N, d_size)
+    y = make_y(df, x, N)
+    # y = np.random.normal(0, 1, N*N)
+    count = 0
+    while True:
+        pr_x = pr.prox_l1(x, lamd/rho)
+        pr_y = y - (pr.prox_l1(y - s, 1/rho) + s)
+        bx = 2 * pr_x - x
+        by = 2 * pr_y - y
+        bxf = np.zeros(bx.shape, dtype=np.complex)
+        for i in range(M):
+            bxf[i*N:(i+1)*N] = np.fft.fft(bx[i*N:(i+1)*N])/np.sqrt(N)
+        byf = np.fft.fft(by)/np.sqrt(N)
+        IDDt = make_IDDt(df, N, M, rho)
+        hidari = make_hidari(IDDt, df, bxf, N, M, rho)
+        migi = make_migi(IDDt, df, byf, N, M, rho)
+        xy = np.concatenate([x, y], 0)
+        pr_xy = np.concatenate([pr_x, pr_y], 0)
+        print("")
+        xy = xy + migi + hidari - pr_xy
+        gosa = sum(migi+hidari-pr_xy)
+        x = xy[:N*M]
+        y = xy[N*M:]
+        h = pr.prox_l1(x, lamd/rho)
+        hizero = np.linalg.norm(h.astype(np.float64), ord=0)
+        # a, hizero = check(df, xy, s, N, M, lamd)
+        count = count + 1
+        print("count :", count, "gosa", gosa, "hizero", hizero)
+        if count >= ite:
+            break    
+    print("final gosa", gosa)
+    print("final coefcount :", count)
+    return h
+
+
+def X_to_xf(X, N, M):
+    xf = np.zeros(N*M, dtype=np.complex)
+    for i in range(M):
+        xf[i*N:(i+1)*N] = np.fft.fft(X[i*N:(i+1)*N])    
+    return xf
+
+
+def resolvent_d(d, y, s, rho, N, M, d_size):
+    d = d.reshape(M, int(np.sqrt(N)), int(np.sqrt(N)))
+    d = d.transpose(1, 2, 0)
+    d_Pcn = cnvrep.Pcn(d.reshape(int(np.sqrt(N)), int(np.sqrt(N)), 1, 1, M), (d_size, d_size, M), Nv=(int(np.sqrt(N)), int(np.sqrt(N)))).squeeze()
+    d_Pcn = d_Pcn.transpose(2, 0, 1)
+    d = d_Pcn.reshape(N*M)
+    y = y - (pr.prox_l1(y - s, 1/rho) + s)
+    return np.concatenate([d, y], 0)
+
+
+def dictinary_learning(D, xf, s, N, M, rho, d_size,ite=50):
+    dd_conj = D_to_dd_conj(D, xf, N, d_size)
+    print(dd_conj.shape)
+    count = 0
+    while True:
+        re_d = resolvent_d(dd_conj[:N*M], dd_conj[N*M:], s, rho, N, M, d_size)
+        b = 2 * re_d - dd_conj
+        bf = np.zeros(b.shape, dtype=np.complex)
+        for i in range(M+1):
+            bf[i*N:(i+1)*N] = np.fft.fft(b[i*N:(i+1)*N])/np.sqrt(N)
+        IXXt = make_IDDt(xf, N, M, rho)
+        hidari = make_hidari(IXXt, xf, bf[:N*M], N, M, rho)
+        migi = make_migi(IXXt, xf, bf[N*M:], N, M, rho)
+        dd_conj = dd_conj + migi + hidari - re_d
+        gosa = sum(migi+hidari-re_d)
+        # gosa, hizero = check(xf, dd_conj, s, N, M, lamd)
+        count = count + 1
+        print("count :", count, "gosa", gosa)
+        if count >= ite:
+            break
+        a = resolvent_d(dd_conj[:N*M], dd_conj[N*M:], s, rho, N, M, d_size)
+    print("final dic count :", count)
+    print("final gosa", gosa)
+    return a[:N*M]
+
+
+def reconstruct(xf, d, N, M):
+    df = np.zeros(N*M, dtype=np.complex)
+    sf = np.zeros(N, dtype=np.complex)
+    s = np.zeros(N*M)
+    for i in range(M):
+        df[i*N:(i+1)*N] = np.fft.fft(d[i*N:(i+1)*N])
+    for i in range(M):
+        sf = xf[i*N:(i+1)*N]/np.sqrt(N) * df[i*N:(i+1)*N] + sf
+    s = np.fft.ifft(sf)*np.sqrt(N)
+    s = s.astype(np.float64)
+    sqrtN = int(np.sqrt(N))
+    return s.reshape(sqrtN, sqrtN)

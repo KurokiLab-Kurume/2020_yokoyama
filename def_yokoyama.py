@@ -12,6 +12,7 @@ import glob
 from skimage.metrics import structural_similarity as ssim
 # %%
 
+
 def zero_pad(D, N, d_size):
     N = int(np.sqrt(N))
     return np.pad(D, ((0, N-d_size), (0, N-d_size)), 'constant')
@@ -241,7 +242,7 @@ def pr_d(d, N, M, d_size):
     return d
 
 
-def dictinary_learning(D, dcon, xf, s, N, M, rho, d_size, ite=50):
+def dictionary_learning(D, dcon, xf, s, N, M, rho, d_size, ite=50):
     dd_conj = []
     prlog = []
     dulog = []
@@ -327,6 +328,7 @@ def coefficient_learning_l2(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
     xlog = []
     ylog = []
     zero = []
+    IDDt = make_IDDt(df, N, M, rho)
     for j in range(len(x)):
         s_count = s_count+1
         # y = make_y(df, x[j], N, M)
@@ -341,7 +343,6 @@ def coefficient_learning_l2(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
             for i in range(M):
                 bxf[i*N:(i+1)*N] = np.fft.fft(bx[i*N:(i+1)*N])
             byf = np.fft.fft(by)
-            IDDt = make_IDDt(df, N, M, rho)
             hidari = make_hidari(IDDt, df, bxf, N, M, rho)
             migi = make_migi(IDDt, df, byf, N, M, rho)
             xy = np.concatenate([x[j], y[j]], 0)
@@ -371,7 +372,7 @@ def coefficient_learning_l2(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
     return reX, y, xlog[:ite], ylog[:ite], sum(zero)/len(zero)
 
 
-def dictinary_learning_l2(D, dcon, xf, s, N, M, rho, d_size, ite=50):
+def dictionary_learning_l2(D, dcon, xf, s, N, M, rho, d_size, ite=50):
     dd_conj = []
     prlog = []
     dulog = []
@@ -426,28 +427,48 @@ def resolvent_d_l2(d, y, s, rho, N, M, d_size):
     return np.concatenate([d, y], 0)
 # %%
 # #階層移動
-# os.chdir("/Users/yokoyama/Desktop/2020_yokoyama/images")
-# #階層内のPathを全取得
-# path = glob.glob("*")
-# training_data = np.empty((1,128,128))
-# #リサイズ後のサイズ
+os.chdir("/Users/yokoyama/Desktop/2020_yokoyama/images")
+#階層内のPathを全取得
+path = glob.glob("*")
+# training_data = np.empty((128,128))
+#リサイズ後のサイズ
 
-# IMG_SIZE = 128
-# i = 0
-# #個別のFilePathに対して処理していきます。
-# for p in path:
-#    pathEach = p
-#   #  print(pathEach) #NumPy配列ndarrayとして読み込まれ、ndarrayを画像として保存
-#    imageTTTT = cv2.imread(pathEach, cv2.IMREAD_GRAYSCALE)
-#    if i == 0:
-#      training_data = cv2.resize(imageTTTT, (IMG_SIZE, IMG_SIZE))
-#      i = 1
-#    else:
-#      training_data = np.append(training_data, cv2.resize(imageTTTT, (IMG_SIZE, IMG_SIZE)), axis=0)
-# fig = plot.figure(figsize=(14, 7))
-# plot.imview(training_data[0], title='Original', fig=fig)
+IMG_SIZE = 128
+ori = []
+image_count = 0
+#個別のFilePathに対して処理していきます。
+for p in path:
+    while True:
+        pathEach = p
+        #  print(pathEach) #NumPy配列ndarrayとして読み込まれ、ndarrayを画像として保存
+        imageTTTT = cv2.imread(pathEach, cv2.IMREAD_GRAYSCALE)
+        ori.append(cv2.resize(imageTTTT, (IMG_SIZE, IMG_SIZE)))
+        image_count = image_count +1
+        print(str(image_count))
+        if image_count >= 50:
+            break
+    pathEach = p
+    image_count = image_count +1
+    print(str(image_count))
+    #  print(pathEach) #NumPy配列ndarrayとして読み込まれ、ndarrayを画像として保存
+    imageTTTT = cv2.imread(pathEach, cv2.IMREAD_GRAYSCALE)
+    tesS.append(cv2.resize(imageTTTT, (IMG_SIZE, IMG_SIZE)))
+    if image_count >= 100:
+        break
 
-
+fig = plot.figure(figsize=(14, 7))
+plot.imview(ori[1], title='Original', fig=fig)
+# print(ori[0].shape)
+# print(type(ori[0]))
+S = []
+for i in range(len(ori)):
+    S.append(ori[i].reshape(IMG_SIZE*IMG_SIZE))
+TESTS = []
+for i in range(len(tesS)):
+    TESTS.append(tesS[i].reshape(IMG_SIZE*IMG_SIZE))
+print("ok")
+print(len(S))
+print(len(TESTS))
 # %%
 
 
@@ -457,32 +478,32 @@ s2 = exim.image('kodim23.png', idxexp=np.s_[:, 60:572])
 s3 = exim.image('monarch.png', idxexp=np.s_[:, 160:672])
 s4 = exim.image('sail.png', idxexp=np.s_[:, 210:722])
 s5 = exim.image('tulips.png', idxexp=np.s_[:, 30:542])
-ori = [s1, s2, s3, s4, s5]
+# ori = [s1, s2, s3, s4, s5]
 # ori = [s1]
 npd = 16
 fltlmbd = 10
-sl1, sh1 = util.tikhonov_filter(s1, fltlmbd, npd)
-sl2, sh2 = util.tikhonov_filter(s2, fltlmbd, npd)
-sl3, sh3 = util.tikhonov_filter(s3, fltlmbd, npd)
-sl4, sh4 = util.tikhonov_filter(s4, fltlmbd, npd)
-sl5, sh5 = util.tikhonov_filter(s5, fltlmbd, npd)
-print(s1.shape)
-N = sh1.shape[0]
-S1 = sh1.reshape(N*N)
-S2 = sh2.reshape(N*N)
-S3 = sh3.reshape(N*N)
-S4 = sh4.reshape(N*N)
-S5 = sh5.reshape(N*N)
+# sl1, sh1 = util.tikhonov_filter(s1, fltlmbd, npd)
+# sl2, sh2 = util.tikhonov_filter(s2, fltlmbd, npd)
+# sl3, sh3 = util.tikhonov_filter(s3, fltlmbd, npd)
+# sl4, sh4 = util.tikhonov_filter(s4, fltlmbd, npd)
+# sl5, sh5 = util.tikhonov_filter(s5, fltlmbd, npd)
+# print(s1.shape)
+# N = sh1.shape[0]
+# S1 = sh1.reshape(N*N)
+# S2 = sh2.reshape(N*N)
+# S3 = sh3.reshape(N*N)
+# S4 = sh4.reshape(N*N)
+# S5 = sh5.reshape(N*N)
 # S1 = s1.reshape(N*N)
 # S2 = s2.reshape(N*N)
 # S3 = s3.reshape(N*N)
 # S4 = s4.reshape(N*N)
 # S5 = s5.reshape(N*N)
-S = [S1, S2, S3, S4, S5]
+# S = [S1, S2, S3, S4, S5]
 # S = [S1]
 print(S1.shape)
 # 辞書枚数
-M = 16
+M = 24
 d_size = 10
 # proxのstep
 # D = util.convdicts()['G:12x12x36']
@@ -512,7 +533,7 @@ dud_log = []
 hizero = []
 goal = []
 # %%
-lamd = 0.01
+lamd = 0.02
 rhox = 1
 rhod = 1
 coef_ite = 1
@@ -520,42 +541,14 @@ dict_ite = 1
 total_ite = 50
 # %%
 # L1-L1 DR
-# for i in range(total_ite):
-#     roopcount = roopcount + 1
-#     X, y, prx, dux, hize = coefficient_learning(d, X, y, S, N*N, M, rhox, lamd, d_size, coef_ite)
-#     prx_log.append(prx[coef_ite-1])
-#     dux_log.append(dux[coef_ite-1])
-#     hizero.append(hize)
-#     xf = X_to_xf(X, N*N, M)
-#     d, dcon, prd, dud = dictinary_learning(d, dcon, xf, S, N*N, M, rhod, d_size, dict_ite)
-#     prd_log.append(prd[0])
-#     dud_log.append(dud[0])
-#     d = pr_d(d, N*N, M, d_size)
-#     # X = X.transpose(1, 2, 0)
-#     d = d[:, :d_size, :d_size]
-#     if i == total_ite-1:
-#         d = d.transpose(1, 2, 0)
-#         plot.imview(util.tiledict(d), fgsz=(7, 7))
-#         d = d.transpose(2, 0, 1)
-#     mindx_s = dx_s(d, xf, S, N*N, M, K, d_size) + lamd*l1x(X, N*N, M)
-#     goal.append(mindx_s)
-#     D = D_to_d(d, N*N, d_size)
-#     image = reconstruct(xf[0], D, N*N, M)
-#     print("iterate number: ", roopcount)
-#     imgr = sl1 + image
-#     # imgr = image
-#     print("Reconstruction PSNR: %.2fdB\n" % sm.psnr(ori[0], imgr))
-# ----------------------------------------------------------------
-# L2-L1 DR
-# ----------------------------------------------------------
 for i in range(total_ite):
     roopcount = roopcount + 1
-    X, y, prx, dux, hize = coefficient_learning_l2(d, X, y, S, N*N, M, rhox, lamd, d_size, coef_ite)
+    X, y, prx, dux, hize = coefficient_learning(d, X, y, S, N*N, M, rhox, lamd, d_size, coef_ite)
     prx_log.append(prx[coef_ite-1])
     dux_log.append(dux[coef_ite-1])
     hizero.append(hize)
     xf = X_to_xf(X, N*N, M)
-    d, dcon, prd, dud = dictinary_learning_l2(d, dcon, xf, S, N*N, M, rhod, d_size, dict_ite)
+    d, dcon, prd, dud = dictionary_learning(d, dcon, xf, S, N*N, M, rhod, d_size, dict_ite)
     prd_log.append(prd[0])
     dud_log.append(dud[0])
     d = pr_d(d, N*N, M, d_size)
@@ -573,6 +566,34 @@ for i in range(total_ite):
     imgr = sl1 + image
     # imgr = image
     print("Reconstruction PSNR: %.2fdB\n" % sm.psnr(ori[0], imgr))
+# ----------------------------------------------------------------
+# L2-L1 DR
+# ----------------------------------------------------------
+# for i in range(total_ite):
+#     roopcount = roopcount + 1
+#     X, y, prx, dux, hize = coefficient_learning_l2(d, X, y, S, N*N, M, rhox, lamd, d_size, coef_ite)
+#     prx_log.append(prx[coef_ite-1])
+#     dux_log.append(dux[coef_ite-1])
+#     hizero.append(hize)
+#     xf = X_to_xf(X, N*N, M)
+#     d, dcon, prd, dud = dictionary_learning_l2(d, dcon, xf, S, N*N, M, rhod, d_size, dict_ite)
+#     prd_log.append(prd[0])
+#     dud_log.append(dud[0])
+#     d = pr_d(d, N*N, M, d_size)
+#     # X = X.transpose(1, 2, 0)
+#     d = d[:, :d_size, :d_size]
+#     if i == total_ite-1:
+#         d = d.transpose(1, 2, 0)
+#         plot.imview(util.tiledict(d), fgsz=(7, 7))
+#         d = d.transpose(2, 0, 1)
+#     mindx_s = dx_s(d, xf, S, N*N, M, K, d_size) + lamd*l1x(X, N*N, M)
+#     goal.append(mindx_s)
+#     D = D_to_d(d, N*N, d_size)
+#     image = reconstruct(xf[0], D, N*N, M)
+#     print("iterate number: ", roopcount)
+#     imgr = sl1 + image
+#     # imgr = image
+#     print("Reconstruction PSNR: %.2fdB\n" % sm.psnr(ori[0], imgr))
     # fig = plot.figure(figsize=(14, 7))
     # plot.subplot(1, 2, 1)
     # plot.imview(ori[0], title='Original', fig=fig)
@@ -592,17 +613,14 @@ print(image)
 print(np.array(X).shape)
 # %%
 imgr = []
-imgr.append(sl1 + reconstruct(xf[0], D, N*N, M))
-imgr.append(sl2 + reconstruct(xf[1], D, N*N, M))
-imgr.append(sl3 + reconstruct(xf[2], D, N*N, M))
-imgr.append(sl4 + reconstruct(xf[3], D, N*N, M))
-imgr.append(sl5 + reconstruct(xf[4], D, N*N, M))
-# imgr.append(reconstruct(xf[0], D, N*N, M))
-# imgr.append(reconstruct(xf[1], D, N*N, M))
-# imgr.append(reconstruct(xf[2], D, N*N, M))
-# imgr.append(reconstruct(xf[3], D, N*N, M))
-# imgr.append(reconstruct(xf[4], D, N*N, M))
-for g in range(K):
+# imgr.append(sl1 + reconstruct(xf[0], D, N*N, M))
+# imgr.append(sl2 + reconstruct(xf[1], D, N*N, M))
+# imgr.append(sl3 + reconstruct(xf[2], D, N*N, M))
+# imgr.append(sl4 + reconstruct(xf[3], D, N*N, M))
+# imgr.append(sl5 + reconstruct(xf[4], D, N*N, M))
+for i in range(len(xf)):
+    imgr.append(reconstruct(xf[i], D, N*N, M))
+for g in range(len(imgr)):
     fig = plot.figure(figsize=(14, 7))
     plot.subplot(1, 2, 1)
     plot.imview(ori[g], title='Original', fig=fig)
@@ -655,14 +673,15 @@ fig.show()
 # %%
 tesX = []
 tesy = []
-for i in range(2):
+for i in range(len(TESTS)):
     # x = np.random.normal(0, 1, N*N*M)
     # x = np.zeros(K, N*N*M)
     x = np.zeros(N*N*M)
     tesX.append(x)
-for i in range(2):
+for i in range(len(TESTS)):
     x = np.random.normal(0, 1, N*N)
     tesy.append(x)
+# %%
 tesS1 = cv2.resize(np.load("test.npy")[0], (N, N))/255
 tesS2 = cv2.resize(np.load("test.npy")[1], (N, N))/255
 tesS = [tesS1.astype(np.float64), tesS2.astype(np.float64)]
@@ -681,10 +700,10 @@ X_tes, y_tes, prx_tes, dux_tes, hize_tes = coefficient_learning(d, tesX, tesy, T
 # %%
 xf_tes = X_to_xf(X_tes, N*N, M)
 img_tes = []
-img_tes.append(sl6+reconstruct(xf_tes[0], D, N*N, M))
-img_tes.append(sl7+reconstruct(xf_tes[1], D, N*N, M))
-# img_tes.append(reconstruct(xf_tes[0], D, N*N, M))
-# img_tes.append(reconstruct(xf_tes[1], D, N*N, M))
+# img_tes.append(sl6+reconstruct(xf_tes[0], D, N*N, M))
+# img_tes.append(sl7+reconstruct(xf_tes[1], D, N*N, M))
+for i in range(len(xf_tes)):
+    img_tes.append(reconstruct(xf_tes[i], D, N*N, M))
 
 # print(sh1)
 # print(reconstruct(xf[0], D, N*N, M))
