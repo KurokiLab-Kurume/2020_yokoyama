@@ -7,70 +7,12 @@ from sporco import util
 from sporco import plot
 import matplotlib.pyplot as plt
 import sporco.metric as sm
-import os
-import cv2
-import glob
 from skimage.metrics import structural_similarity as ssim
-
-import cProfile, pstats, io
-from pstats import SortKey
 
 from typing import TypedDict
 
 
 # %%
-def zero_pad(D, N, d_size):
-    N = int(np.sqrt(N))
-    return np.pad(D, ((0, N - d_size), (0, N - d_size)), 'constant')
-
-
-def D_to_df(D, N, d_size):
-    flat = np.zeros(N * D.shape[0])
-    for i in range(D.shape[0]):
-        a = zero_pad(D[i], N, d_size)
-        flat[i * N:(i + 1) * N] = np.ravel(a)
-    # emptyの方がメモリ抑えられるかも
-    df = np.zeros(N * D.shape[0], dtype=np.complex)
-    for i in range(D.shape[0]):
-        df[i * N:(i + 1) * N] = np.fft.fft(flat[i * N:(i + 1) * N])
-    return df
-
-
-# def D_to_df_kai(D, N, M, d_size):
-#     dd = d_size * d_size
-#     d = np.zeros(N * M)
-#     df = np.zeros(N * M, dtype=np.complex)
-#     for i in range(M):
-#         flat = np.ravel(D[i])
-#         d[i * N:(i + 1) * N] = np.pad(flat, (0, N - dd))
-#         df[i * N:(i + 1) * N] = np.fft.fft(d[i * N:(i + 1) * N])
-#     return d, df
-
-
-def D_to_d(D, N, d_size):
-    flat = np.zeros(N * D.shape[0])
-    for i in range(D.shape[0]):
-        a = zero_pad(D[i], N, d_size)
-        flat[i * N:(i + 1) * N] = np.ravel(a)
-    return flat
-
-
-def make_IDDt(df, N, M, rho):
-    DDt = np.zeros(N, dtype=np.complex)
-    print(df.shape)
-    for i in range(M):
-        DDt = df[i * N:(i + 1) * N] * df[i * N:(i + 1) * N].conjugate() + DDt
-    return 1 + rho * rho * DDt
-
-# def make_IXXt(XF, N, M, alpha):
-#     XXt = np.zeros(N, dtype=np.complex)
-#     xxt = np.zeros(N, dtype=np.complex)
-#     for xf in XF:
-#         for i in range(M):
-#             xxt = xf[i * N:(i + 1) * N] * xf[i * N:(i + 1) * N].conjugate() + xxt
-#         XXt = xxt + XXt
-#     return 1 + alpha * alpha * XXt
-
 # Aのリゾルベントの右部分の計算
 def make_migi(IDDt, df, byf, N, M, alpha):
     Dtb = np.zeros(N * M, dtype=np.complex)
@@ -103,13 +45,6 @@ def make_hidari(IDDt, df, bxf, N, M, alpha):
     hidari_NM = hidari_NM.astype(np.float64)
     return np.concatenate([hidari_NM, hidari_N], 0)
 
-
-# def resolvent_b(df, xy, s, rho, lamd, N, M):
-#     x = pr.prox_l1(xy[:N * M], lamd / rho)
-#     y = xy[N * M:] - (pr.prox_l1(xy[N * M:] - s, 1 / rho) + s)
-#     return np.concatenate([x, y], 0)
-
-
 def make_y(df, x, N, M):
     #  h(Dx)=l1norm.(Dx - s)  y = Dxを初期値とした
     xf = np.zeros(x.shape, dtype=np.complex)
@@ -138,96 +73,6 @@ def D_to_dd_conj(D, dy, xf, N, d_size):
     # y = np.fft.ifft(yf) * np.sqrt(N)
     # y = y.astype(np.float64)
     return np.concatenate([flat, dy], 0)
-
-
-def coefficient_learning(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
-    df = D_to_df(D, N, d_size)
-    reX = []
-    s_count = 0
-    xlog = []
-    ylog = []
-    zero = []
-    IDDt = make_IDDt(df, N, M, rho)
-    for j in range(len(x)):
-        s_count = s_count + 1
-        # y = make_y(df, x[j], N, M)
-        # y = np.random.normal(0, 1, N * N)
-        count = 0
-        while True:
-            pr_x = pr.prox_l1(x[j], lamd / rho)
-            pr_y = y[j] - (pr.prox_l1(y[j] - s[j], 1 / rho) + s[j])
-            bx = 2 * pr_x - x[j]
-            by = 2 * pr_y - y[j]
-            bxf = np.zeros(bx.shape, dtype=np.complex)
-            for i in range(M):
-                bxf[i * N:(i + 1) * N] = np.fft.fft(bx[i * N:(i + 1) * N])
-            byf = np.fft.fft(by)
-            hidari = make_hidari(IDDt, df, bxf, N, M, rho)
-            migi = make_migi(IDDt, df, byf, N, M, rho)
-            xy = np.concatenate([x[j], y[j]], 0)
-            pr_xy = np.concatenate([pr_x, pr_y], 0)
-            xy = xy + migi + hidari - pr_xy
-            # rsdl_n = max(np.linalg.norm(migi[:N * M] + hidari[:N * M]), np.linalg.norm(pr_xy[:N * M]))
-            # rsdl_ny = max(np.linalg.norm(migi[N * M:] + hidari[N * M:]), np.linalg.norm(pr_xy[N * M:]))
-            # move = np.linalg.norm(migi[:N * M] + hidari[:N * M] - pr_xy[:N * M]) / rsdl_n
-            x[j] = xy[:N * M]
-            y[j] = xy[N * M:]
-            move = pr.prox_l1(x[j], lamd / rho) - pr_x
-            xlog.append(np.linalg.norm(move))
-            # move = np.linalg.norm(migi[N * M:] + hidari[N * M:] - pr_xy[N * M:]) / rsdl_ny
-            move = y[j] - (pr.prox_l1(y[j] - s[j], 1 / rho) + s[j]) - pr_y
-            ylog.append(np.linalg.norm(move))
-            h = pr.prox_l1(x[j], lamd / rho)
-            hizero = np.linalg.norm(h.astype(np.float64), ord=0)
-            # a, hizero = check(df, xy, s, N, M, lamd)
-            count = count + 1
-            print("count :", count, "move[" + str(s_count) + "]",
-                  np.linalg.norm(move), "hizero", hizero)
-            if count >= ite:
-                break
-        zero.append(hizero)
-        # print("final gosa", gosa)
-        print("final coefcount :", count)
-        reX.append(h)
-    return reX, y, xlog[:ite], ylog[:ite], sum(zero) / len(zero)
-
-
-# def Sherman_f(df, N, M, rho):
-#     # inv.(a + bc) = inv.a - inv.a@b@inv.(I + c@inv.a@b)@c@inv.a
-#     DDt = np.zeros(N, dtype=np.complex)
-#     for i in range(M):
-#         DDt = df[i * N:(i + 1) * N] * df[i * N:(i + 1) * N].conjugate() + DDt
-#     IDDt = rho + DDt
-#     inv_rho = 1 / rho
-#     DtD =
-#     inv_rho * (1 - DtD)
-
-# def aa_admm(D, x0, y0, ):
-#     df = D_to_df(D, N, d_size)
-#     x = x0
-#     z = z0
-#     s0 = Dx0 - y0
-#     s = s0
-#     k = 0.
-#     u0 = 0.
-#     v0 = 0.
-#     merit = np.inf
-#     r = np.inf
-#     reset = True
-#     IDDt = make_IDDt(df, N, M, rho)
-#     while True:
-#             x =
-
-
-def X_to_xf(X, N, M):
-    reXF = []
-    for j in range(len(X)):
-        xf = np.zeros(N * M, dtype=np.complex)
-        for i in range(M):
-            xf[i * N:(i + 1) * N] = np.fft.fft(X[j][i * N:(i + 1) * N])
-        reXF.append(xf)
-    return reXF
-
 
 def resolvent_d(d, y, s, rho, N, M, d_size):
     rootN = int(np.sqrt(N))
@@ -296,20 +141,6 @@ def dictinary_learning(D, dcon, xf, s, N, M, rho, d_size, ite=50):
     return d, d_mean[N * M:], prlog, dulog
 
 
-def reconstruct(xf, d, N, M):
-    df = np.zeros(N * M, dtype=np.complex)
-    sf = np.zeros(N, dtype=np.complex)
-    s = np.zeros(N * M)
-    for i in range(M):
-        df[i * N:(i + 1) * N] = np.fft.fft(d[i * N:(i + 1) * N])
-    for i in range(M):
-        sf = xf[i * N:(i + 1) * N] * df[i * N:(i + 1) * N] + sf
-    s = np.fft.ifft(sf)
-    s = s.astype(np.float64)
-    sqrtN = int(np.sqrt(N))
-    return s.reshape(sqrtN, sqrtN)
-
-
 def dx_s(D, xf, s, N, M, K, d_size):
     samu = 0.
     df = D_to_df(D, N, d_size)
@@ -330,58 +161,6 @@ def l1x(X, N, M):
         for j in range(M):
             samu = np.linalg.norm(X[i][j * N:(j + 1) * N], ord=1) + samu
     return samu
-
-
-def coefficient_learning_l2(D, x, y, s, N, M, rho, lamd, d_size, ite=200):
-    df = D_to_df(D, N, d_size)
-    reX = []
-    s_count = 0
-    xlog = []
-    ylog = []
-    zero = []
-    for j in range(len(x)):
-        s_count = s_count + 1
-        # y = make_y(df, x[j], N, M)
-        # y = np.random.normal(0, 1, N * N)
-        count = 0
-        while True:
-            pr_x = pr.prox_l1(x[j], lamd / rho)
-            pr_y = y[j] - (pr.prox_l2(y[j] - s[j], 1 / rho) + s[j])
-            bx = 2 * pr_x - x[j]
-            by = 2 * pr_y - y[j]
-            bxf = np.zeros(bx.shape, dtype=np.complex)
-            for i in range(M):
-                bxf[i * N:(i + 1) * N] = np.fft.fft(bx[i * N:(i + 1) * N])
-            byf = np.fft.fft(by)
-            IDDt = make_IDDt(df, N, M, rho)
-            hidari = make_hidari(IDDt, df, bxf, N, M, rho)
-            migi = make_migi(IDDt, df, byf, N, M, rho)
-            xy = np.concatenate([x[j], y[j]], 0)
-            pr_xy = np.concatenate([pr_x, pr_y], 0)
-            xy = xy + migi + hidari - pr_xy
-            # rsdl_n = max(np.linalg.norm(migi[:N * M] + hidari[:N * M]), np.linalg.norm(pr_xy[:N * M]))
-            # rsdl_ny = max(np.linalg.norm(migi[N * M:] + hidari[N * M:]), np.linalg.norm(pr_xy[N * M:]))
-            # move = np.linalg.norm(migi[:N * M] + hidari[:N * M] - pr_xy[:N * M]) / rsdl_n
-            x[j] = xy[:N * M]
-            y[j] = xy[N * M:]
-            move = pr.prox_l1(x[j], lamd / rho) - pr_x
-            xlog.append(np.linalg.norm(move))
-            # move = np.linalg.norm(migi[N * M:] + hidari[N * M:] - pr_xy[N * M:]) / rsdl_ny
-            move = y[j] - (pr.prox_l1(y[j] - s[j], 1 / rho) + s[j]) - pr_y
-            ylog.append(np.linalg.norm(move))
-            h = pr.prox_l1(x[j], lamd / rho)
-            hizero = np.linalg.norm(h.astype(np.float64), ord=0)
-            # a, hizero = check(df, xy, s, N, M, lamd)
-            count = count + 1
-            print("count :", count, "move[" + str(s_count) + "]",
-                  np.linalg.norm(move), "hizero", hizero)
-            if count >= ite:
-                break
-        zero.append(hizero)
-        # print("final gosa", gosa)
-        print("final coefcount :", count)
-        reX.append(h)
-    return reX, y, xlog[:ite], ylog[:ite], sum(zero) / len(zero)
 
 
 def dictinary_learning_l2(D, dcon, xf, s, N, M, rho, d_size, ite=50):
@@ -443,6 +222,21 @@ def resolvent_d_l2(d, y, s, rho, N, M, d_size):
 
 class StatLog:
     def __init__(self):
+        self.reset()
+
+    def log(self, s: str, val: float):
+        if s == "l0":
+            self.l0.append(val)
+        elif s == "primal_x":
+            self.primal_x.append(val)
+        elif s == "primal_d":
+            self.primal_d.append(val)
+        elif s == "dual_x":
+            self.dual_x.append(val)
+        elif s == "dual_d":
+            self.dual_d.append(val)
+
+    def reset(self):
         self.primal_x = []
         self.primal_d = []
         self.dual_x = []
@@ -466,60 +260,95 @@ class DR_DctLnL1:
         self.N = np.prod(S.shape[1:])
         self.s_size = S.shape[1:]
 
-        self.D0 = np.pad(D0, ((0, 0), (0, S.shape[1] - D0.shape[1]), (0, S.shape[2] - D0.shape[2]))).reshape(1, self.M, self.N)
-        self.DualD = self.dual_d_init()
+        self.axisK = 0
+        self.axisM = 1
+        self.axisN = 2
 
+        self.lmbda = self.opt["lmbda"]
+        self.rhox = self.opt["rhox"]
+        self.rhod = self.opt["rhod"]
+
+
+        self.S = S.reshape(self.K, 1, self.N)
+        self.Sf = np.fft.rfft(self.S)
+
+        self.dinit(D0)
         self.xinit()
 
         self.stats = StatLog()
+        self.j = 0
+
+    def pcn(self, d):
+        d = d.reshape(self.M, *self.s_size)
+        d[:, :, self.d_size[1]:] = 0
+        d[:, self.d_size[0]:, :self.d_size[1]] = 0
+        d = d.reshape(1, self.M, self.N)
+        tmp = np.linalg.norm(d, axis=self.axisN)
+        np.putmask(tmp, tmp > 1, 1)
+        return d / tmp.reshape(1, self.M, 1)
+
+    def dinit(self, D0):
+        self.d_size = D0.shape[1:]
+        self.ZD = np.pad(D0, ((0, 0), (0, S.shape[1] - D0.shape[1]), (0, S.shape[2] - D0.shape[2]))).reshape(1, self.M, self.N)
+        self.D = self.pcn(self.ZD)
+        self.ZE = np.random.randn(self.K, 1, self.N)
+        self.E = self.ZE - self.rhod * (pr.prox_l1(self.ZE / self.rhod - self.S, 1 / self.rhox) + self.S)
+        self.Df = np.fft.rfft(self.D)
 
     def xinit(self):
         self.X = np.zeros((self.K, self.M, self.N), dtype=float)
-        self.Y = np.random.randn(self.K, 1, self.N)
-
-    def dual_d_init(self):
-        return np.random.randn(1, 1, self.N)
+        self.ZY = np.random.randn(self.K, 1, self.N)
+        self.ZX = self.X.copy()
+        self.Y = self.ZY - self.rhox * (pr.prox_l1(self.ZY / self.rhox - self.S, 1 / self.rhox) + self.S)
 
     def dstep(self):
-        pass
+        Xf = self.Xf
+        rho = self.rhod
+        IXXtf = 1 * rho * rho * np.sum(np.moveaxis(Xf, 1, 0) * Xf.reshape(self.K, self.M, 1, -1), axis=1)
+        for _ in range(self.opt["dict_ite"]):
+            Raf4E = np.sum(np.fft.rfft(2 * self.E - self.ZE).reshape(1, self.K, -1) / IXXtf, axis=1, keepdims=True)
+            Raf2E = -rho * np.sum(np.conj(Xf) * Raf4E, axis=0, keepdims=True)
+            bD = np.fft.rfft(2 * self.D - self.ZD)
+            Raf3D = rho * np.sum(np.sum(Xf * bD, axis=1, keepdims=True) / IXXtf, axis=1, keepdims=True)
+            Raf1D = bD - rho * np.sum(np.conj(Xf) * Raf3D, axis=0)
+            self.ZD += np.fft.irfft(Raf1D + Raf2E) - self.D
+            self.ZE += np.fft.irfft(Raf3D + Raf4E) - self.E
+            self.D = self.pcn(self.ZD)
+            self.E = self.ZE - rho * (pr.prox_l1(self.ZE / rho - self.S, 1 / rho) + self.S)
+        self.Df = np.fft.rfft(self.D)
 
     def xstep(self):
-        pass
+        Df = self.Df
+        rho = self.rhox
+        lmbda = self.lmbda
+        IDDtf = 1 + rho * rho * np.sum(Df * np.conj(Df), axis=self.axisM)
+        for _ in range(self.opt["coef_ite"]):
+            Raf4Y = np.fft.rfft(2 * self.Y - self.ZY) / IDDtf
+            Raf2Y = -rho * np.conj(Df) * Raf4Y
+            bX = np.fft.rfft(2 * self.X - self.ZX)
+            Raf3X = rho * np.sum(Df * bX, axis=1, keepdims=True) / IDDtf
+            Raf1X = bX - rho * np.conj(Df) * Raf3X
+            self.ZX += np.fft.irfft(Raf1X + Raf2Y) - self.X
+            self.ZY += np.fft.irfft(Raf3X + Raf4Y) - self.Y
+            self.X = pr.prox_l1(self.ZX, lmbda * rho)
+            self.Y = self.ZY - rho * (pr.prox_l1(self.ZY / rho - self.S, 1 / rho) + self.S)
+        self.Xf = np.fft.rfft(self.X)
 
     def step(self):
-        pass
+        self.xstep()
+        self.dstep()
 
     def solve(self):
-        for i in range(total_ite):
-            roopcount = roopcount + 1
-            X, y, prx, dux, hize = coefficient_learning(d, X, y, S, N * N, M, rhox, lamd, d_size, coef_ite)
-            # logging
-            prx_log.append(prx[coef_ite - 1])
-            dux_log.append(dux[coef_ite - 1])
-            hizero.append(hize)
-            # fft
-            xf = X_to_xf(X, N * N, M)
-            d, dcon, prd, dud = dictinary_learning(d, dcon, xf, S, N * N, M, rhod, d_size, dict_ite)
-            # logging
-            prd_log.append(prd[0])
-            dud_log.append(dud[0])
-            # prox of support function
-            d = pr_d(d, N * N, M, d_size)
-            # X = X.transpose(1, 2, 0)
-            # crop
-            d = d[:, :d_size, :d_size]
-            if i == total_ite - 1:
-                d = d.transpose(1, 2, 0)
-                plot.imview(util.tiledict(d), fgsz=(7, 7))
-                d = d.transpose(2, 0, 1)
-            mindx_s = dx_s(d, xf, S, N * N, M, K, d_size) + lamd * l1x(X, N * N, M)
-            goal.append(mindx_s)
-            D = D_to_d(d, N * N, d_size)
-            image = reconstruct(xf[0], D, N * N, M)
-            print("iterate number: ", roopcount)
-            imgr = sl1 + image
-            # imgr = image
-            print("Reconstruction PSNR: %.2fdB\n" % sm.psnr(ori[0], imgr))
+        for self.j in range(self.j, self.j + self.opt["total_ite"]):
+            self.step()
+
+    def reconstruct(self):
+        if not hasattr(self, "Xf"):
+            return np.fft.irfft(np.sum(self.Df * np.fft.rfft(self.X), axis=self.axisM)).reshape(self.K, *self.s_size)
+        return np.fft.irfft(np.sum(self.Df * self.Xf, axis=self.axisM)).reshape(self.K, *self.s_size)
+    
+    def getdict(self):
+        return self.D.reshape(self.M, *self.s_size)[:, :self.d_size[0], :self.d_size[1]]
 
 
 # %%
@@ -555,14 +384,17 @@ D0 = np.random.randn(M, d_size, d_size)
 roopcount = 0
 
 # %%
-lamd = 0.01
+lamd = 0.03
 rhox = 1
 rhod = 1
-coef_ite = 1
-dict_ite = 1
 total_ite = 50
-opt = DR_DctLnL1.Options(lmbda=lamd, rhox=rhox, rhod=rhod, coef_ite=coef_ite, dict_ite=dict_ite, total_ite=total_ite)
-DR_DctLnL1(D0, S, opt)
+opt = DR_DctLnL1.Options(lmbda=lamd, rhox=rhox, rhod=rhod, total_ite=total_ite, coef_ite=10, dict_ite=1)
+d = DR_DctLnL1(D0, (S[0:1] - 0.5) * 128, opt)
+d.solve()
+plot.imview(util.tiledict(d.reconstruct().transpose(1, 2, 0)))
+plot.imview(util.tiledict(d.getdict().transpose(1, 2, 0)))
+print(np.sum(d.X != 0, axis=(d.axisM, d.axisN)))
+# print(sm.psnr(S[0], d.reconstruct()[0]))
 # %%
 # L1 - L1 DR
 for i in range(total_ite):
